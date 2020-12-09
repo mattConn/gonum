@@ -214,7 +214,7 @@ func C14n(dst, src []*Statement, terms map[string]map[string]bool) ([]*Statement
 		}
 		n := dst[i]
 		n.Subject = Term{Value: translate(s.Subject.Value, c14n)}
-		n.Predicate = Term{Value: translate(s.Predicate.Value, c14n)}
+		n.Predicate = s.Predicate
 		n.Object = Term{Value: translate(s.Object.Value, c14n)}
 		n.Label = Term{Value: translate(s.Label.Value, c14n)}
 	}
@@ -237,9 +237,9 @@ func (s c14nStatements) Less(i, j int) bool {
 	si := s[i]
 	sj := s[j]
 	switch {
-	case unquoteIRI(si.Subject.Value) < unquoteIRI(sj.Subject.Value):
+	case si.Subject.Value < sj.Subject.Value:
 		return true
-	case unquoteIRI(si.Subject.Value) > unquoteIRI(sj.Subject.Value):
+	case si.Subject.Value > sj.Subject.Value:
 		return false
 	}
 	switch { // Always IRI.
@@ -249,12 +249,12 @@ func (s c14nStatements) Less(i, j int) bool {
 		return false
 	}
 	switch {
-	case unquoteIRI(si.Object.Value) < unquoteIRI(sj.Object.Value):
+	case si.Object.Value < sj.Object.Value:
 		return true
-	case unquoteIRI(si.Object.Value) > unquoteIRI(sj.Object.Value):
+	case si.Object.Value > sj.Object.Value:
 		return false
 	}
-	return unquoteIRI(si.Label.Value) < unquoteIRI(sj.Label.Value)
+	return si.Label.Value < sj.Label.Value
 }
 func (s c14nStatements) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
@@ -262,7 +262,7 @@ func (s c14nStatements) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 // using the provided hash function. Hashes are initialised with zero.
 //
 // This is algorithm 1 in doi:10.1145/3068333.
-func hashBNodes(statements []*Statement, h hash.Hash, zero []byte, hash0 map[string][]byte) (hash table, disjoint bool) {
+func hashBNodes(statements []*Statement, h hash.Hash, zero []byte, hash0 map[string][]byte) (hash *table, disjoint bool) {
 	curr := newTable()
 	for _, s := range statements {
 		for i, t := range []string{
@@ -293,9 +293,9 @@ func hashBNodes(statements []*Statement, h hash.Hash, zero []byte, hash0 map[str
 	}
 
 	bag := newHashBag(h, curr)
-	last := curr
+	last := curr.clone()
 	for {
-		curr, last = last.clone(), curr
+		curr, last = last, curr
 		for _, s := range statements {
 			if strings.HasPrefix(s.Subject.Value, "_:") {
 				var lab []byte
@@ -355,8 +355,8 @@ type table struct {
 }
 
 // newTable returns a new hash table.
-func newTable() table {
-	return table{
+func newTable() *table {
+	return &table{
 		hashOf:   make(map[string][]byte),
 		termsFor: make(map[string]map[string]bool),
 		isBlank:  make(map[string]bool),
@@ -364,8 +364,8 @@ func newTable() table {
 }
 
 // clone returns a clone of the receiver.
-func (t table) clone() table {
-	new := table{
+func (t *table) clone() *table {
+	new := &table{
 		hashOf:   make(map[string][]byte),
 		termsFor: make(map[string]map[string]bool),
 	}
@@ -382,17 +382,16 @@ func (t table) clone() table {
 		}
 		new.termsFor[hash] = terms
 	}
-	new.blanks = t.blanks
-	if t.isBlank != nil {
-		// This is our first clone operation, so make
-		// a slice copy of the isBlank set.
-		new.blanks = make([]string, len(t.isBlank))
+	if t.blanks == nil {
+		t.blanks = make([]string, len(t.isBlank))
 		i := 0
 		for n := range t.isBlank {
-			new.blanks[i] = n
+			t.blanks[i] = n
 			i++
 		}
+		t.isBlank = nil
 	}
+	new.blanks = t.blanks
 	return new
 }
 
@@ -402,24 +401,27 @@ func (t table) clone() table {
 // a pair of buffers, a current and a waiting.
 
 // set sets the hash of the term, removing any previously set hash.
-func (t table) set(term string, hash []byte) {
-	if bytes.Equal(t.hashOf[term], hash) {
+func (t *table) set(term string, hash []byte) {
+	prev := t.hashOf[term]
+	if bytes.Equal(prev, hash) {
 		return
 	}
+	t.hashOf[term] = hash
 
 	// Delete any existing hashes for this term.
-	delete(t.termsFor[string(t.hashOf[term])], term)
-	if len(t.termsFor[string(t.hashOf[term])]) == 0 {
-		delete(t.termsFor, string(t.hashOf[term]))
+	switch terms := t.termsFor[string(prev)]; {
+	case len(terms) == 1:
+		delete(t.termsFor, string(prev))
+	case len(terms) > 1:
+		delete(terms, term)
 	}
 
 	terms, ok := t.termsFor[string(hash)]
-	if !ok {
-		terms = make(map[string]bool)
-		t.termsFor[string(hash)] = terms
+	if ok {
+		terms[term] = true
+	} else {
+		t.termsFor[string(hash)] = map[string]bool{term: true}
 	}
-	terms[term] = true
-	t.hashOf[term] = hash
 
 	if t.isBlank != nil && strings.HasPrefix(term, "_:") {
 		// We are in the original table, so note
@@ -430,7 +432,7 @@ func (t table) set(term string, hash []byte) {
 
 // allUnique returns whether every term has an unique hash. allUnique
 // can only be called on a table that was returned by clone.
-func (t table) allUnique() bool {
+func (t *table) allUnique() bool {
 	if t.blanks == nil {
 		panic("checked hash bag from uncloned table")
 	}
@@ -444,7 +446,7 @@ func (t table) allUnique() bool {
 
 // changedFrom returns whether the receiver has been updated from last.
 // changedFrom can only be called on a table that was returned by clone.
-func (t table) changedFrom(last table) bool {
+func (t *table) changedFrom(last *table) bool {
 	if t.blanks == nil {
 		panic("checked hash bag from uncloned table")
 	}
@@ -469,7 +471,7 @@ type hashBag struct {
 // newHashBag returns a new hashBag using the provided hash function for
 // the given hash table. newHashBag can only be take a table parameter
 // that was returned by newTable.
-func newHashBag(h hash.Hash, t table) hashBag {
+func newHashBag(h hash.Hash, t *table) hashBag {
 	if t.isBlank == nil {
 		panic("made hash bag from cloned table")
 	}
@@ -517,7 +519,7 @@ func hashTuple(h hash.Hash, t ...[]byte) []byte {
 // are initialised with zero.
 //
 // This is algorithm 2 in doi:10.1145/3068333.
-func hashBNodesPerSplit(statements []*Statement, decomp bool, h hash.Hash, zero []byte) (hash table, parts byLengthHash, disjoint bool) {
+func hashBNodesPerSplit(statements []*Statement, decomp bool, h hash.Hash, zero []byte) (hash *table, parts byLengthHash, disjoint bool) {
 	if !decomp {
 		hash, ok := hashBNodes(statements, h, zero, nil)
 		parts = appendOrdered(byLengthHash{}, hash.termsFor)
@@ -535,7 +537,7 @@ func hashBNodesPerSplit(statements []*Statement, decomp bool, h hash.Hash, zero 
 		return hash, parts, ok
 	}
 
-	hash = table{hashOf: make(map[string][]byte)}
+	hash = &table{hashOf: make(map[string][]byte)}
 	disjoint = true
 	for _, g := range splits {
 		part, ok := hashBNodes(g, h, zero, nil)
@@ -692,7 +694,7 @@ func split(statements []*Statement) [][]*Statement {
 // The additional parameter dist specifies that distinguish should treat
 // coequal trivial parts as a coarse of intermediate part and distinguish
 // the nodes in that merged part.
-func distinguish(statements []*Statement, dist bool, h hash.Hash, zero []byte, hash table, parts byLengthHash, lowest map[string][]byte, depth int) map[string][]byte {
+func distinguish(statements []*Statement, dist bool, h hash.Hash, zero []byte, hash *table, parts byLengthHash, lowest map[string][]byte, depth int) map[string][]byte {
 	if debug {
 		debug.log(depth, "Running Distinguish")
 	}
