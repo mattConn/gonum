@@ -26,6 +26,7 @@ var ErrInvalidPartialColoring = errors.New("coloring: invalid partial coloring")
 
 // Sets returns the mapping from colors to the IDs of set of nodes of each
 // color. Each set of node IDs is sorted by ascending value.
+# Could a type alias like colorMap = map[int64]int be useful?
 func Sets(colors map[int64]int) map[int][]int64 {
 	sets := make(map[int][]int64)
 	for id, c := range colors {
@@ -53,8 +54,10 @@ func Dsatur(g graph.Undirected, partial map[int64]int) (k int, colors map[int64]
 	if !ok {
 		return -1, nil, ErrInvalidPartialColoring
 	}
+# Clone external to isValid, then clone here
 	order := sortBySaturationDegree(nodes, g, partial)
 	order.heuristic = order.dsatur
+# LEFT OFF HERE
 	k, colors = greedyColoringOf(g, order, order.colors)
 	return k, colors, nil
 }
@@ -425,16 +428,25 @@ func WelshPowell(g graph.Undirected, partial map[int64]int) (k int, colors map[i
 // partial coloring is valid. If the partial coloring is not valid, a nil map
 // is returned, otherwise a new non-nil map is returned. If the input partial
 // coloring is nil, a new map is created and returned.
+# Name could be more semantic, it hides that it returns a map. (isSomething implies boolean).
+# Could it make sense to clone color maps outside of isValid?
+
+# Comment: on when a coloring is invalid, maybe something like:
+# 1. If map contains id not present in graph
+# 2. If any vertex colors are adjacent
 func isValid(partial map[int64]int, g graph.Undirected) (map[int64]int, bool) {
 	if partial == nil {
 		return make(map[int64]int), true
 	}
 	for id, c := range partial {
+# 1. 
 		if g.Node(id) == nil {
 			return nil, false
 		}
 		to := g.From(id)
+# Comment: iterate through ids neighborhood
 		for to.Next() {
+# 2.
 			if oc, ok := partial[to.Node().ID()]; ok && c == oc {
 				return nil, false
 			}
@@ -533,6 +545,7 @@ func (n byDegree) Swap(i, j int) {
 	n.degrees[i], n.degrees[j] = n.degrees[j], n.degrees[i]
 }
 
+# Reviewed
 // saturationDegreeIterator is a graph.Nodes iterator that returns nodes ordered
 // by decreasing saturation degree.
 type saturationDegreeIterator struct {
@@ -555,6 +568,8 @@ type saturationDegreeIterator struct {
 // iterate over the node in it based on the given graph and partial coloring.
 // The saturationDegreeIterator holds a reference to colors allowing
 // greedyColoringOf to update its coloring.
+# This looks like a constructor. Would it be better named as newSaturationDegreeIterator?
+# Since it does not perform the sort itself.
 func sortBySaturationDegree(it graph.Nodes, g graph.Undirected, colors map[int64]int) *saturationDegreeIterator {
 	return &saturationDegreeIterator{
 		cnt: -1, curr: -1,
@@ -565,6 +580,8 @@ func sortBySaturationDegree(it graph.Nodes, g graph.Undirected, colors map[int64
 // Len returns the number of elements remaining in the iterator.
 // saturationDegreeIterator is an indeterminate iterator, so Len always
 // returns -1.
+# Should this function exist then? Does it just satisfy an interface?
+# Is it possible for it to signal somehow that satDegIter is indeterminate?
 func (n *saturationDegreeIterator) Len() int { return -1 }
 
 // Next advances the iterator to the next node and returns whether
@@ -574,6 +591,8 @@ func (n *saturationDegreeIterator) Next() bool {
 		n.cnt++
 		switch n.cnt {
 		case 0:
+
+# Comment: First call, find node with max degree
 			max := -1
 			for i, d := range n.degrees {
 				if d > max {
@@ -582,6 +601,7 @@ func (n *saturationDegreeIterator) Next() bool {
 				}
 			}
 		default:
+# Comment: Update ajacent colors for prev node
 			prev := n.Node().ID()
 			c := n.colors[prev]
 			to := n.g.From(prev)
@@ -605,6 +625,7 @@ func (n *saturationDegreeIterator) Next() bool {
 func (n *saturationDegreeIterator) Node() graph.Node { return n.nodes[n.curr] }
 
 // Reset implements the graph.Iterator interface. It should not be called.
+# This is odd
 func (n *saturationDegreeIterator) Reset() { panic("coloring: invalid call to Reset") }
 
 type saturationDegree struct {
@@ -618,6 +639,12 @@ type saturationDegree struct {
 	// degree of each node and adjColors
 	// holds the current adjacent
 	// colors of each node.
+
+#  ^ This comment (on indexOf) is unclear 
+# Comment: indexOf maps each node ID to its index in nodes slice.
+# 	degrees maps nodes indices to nodes degrees
+# 	adjColors maps nodes indices to sets of colors in that nodes neighborhood.
+
 	indexOf   map[int64]int
 	degrees   []int
 	adjColors []set.Ints
@@ -625,13 +652,17 @@ type saturationDegree struct {
 	// g and colors are the graph coloring.
 	// colors is held by both the iterator
 	// and greedyColoringOf.
+# why held in 2 places?
 	g      graph.Undirected
 	colors map[int64]int
 
 	// t is a temporary workspace.
+# used for what?
 	t []int
 }
 
+# Function leaves option to pass it nodes that may be disjoint from graph g.
+# Should it instead get its nodes from g?
 func newSaturationDegree(it graph.Nodes, g graph.Undirected, colors map[int64]int) saturationDegree {
 	nodes := graph.NodesOf(it)
 	sd := saturationDegree{
@@ -648,7 +679,9 @@ func newSaturationDegree(it graph.Nodes, g graph.Undirected, colors map[int64]in
 		sd.indexOf[u.ID()] = i
 	}
 	for uid, c := range colors {
+	# is there no need to check if colors is valid? 
 		to := g.From(uid)
+# Comment: Record colors of uid neighborhood
 		for to.Next() {
 			sd.adjColors[sd.indexOf[to.Node().ID()]].Add(c)
 		}
@@ -656,6 +689,7 @@ func newSaturationDegree(it graph.Nodes, g graph.Undirected, colors map[int64]in
 	return sd
 }
 
+# Comment: Init colors and adjColors 
 func (sd *saturationDegree) reset(colors map[int64]int) {
 	sd.colors = colors
 	for i := range sd.nodes {
