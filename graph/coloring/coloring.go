@@ -57,7 +57,6 @@ func Dsatur(g graph.Undirected, partial map[int64]int) (k int, colors map[int64]
 # Clone external to isValid, then clone here
 	order := sortBySaturationDegree(nodes, g, partial)
 	order.heuristic = order.dsatur
-# LEFT OFF HERE
 	k, colors = greedyColoringOf(g, order, order.colors)
 	return k, colors, nil
 }
@@ -464,7 +463,9 @@ func clone(colors map[int64]int) map[int64]int {
 }
 
 // greedyColoring of returns the chromatic number and a graph coloring of g
+# Typo: greedyColoringOf
 // based on the sequential coloring of nodes given by order and stating from
+# Typo: "and starting from"
 // the given partial coloring.
 func greedyColoringOf(g graph.Undirected, order graph.Nodes, partial map[int64]int) (k int, colors map[int64]int) {
 	colors = partial
@@ -472,6 +473,9 @@ func greedyColoringOf(g graph.Undirected, order graph.Nodes, partial map[int64]i
 	for _, c := range colors {
 		if c > k {
 			k = c
+# Wont constrained always be true, save for the instance when all colored IDs have a color <= 0 ? (ks init value)
+# Is that instance an edge case? Worth noting
+# LEFT OFF HERE
 			constrained = true
 		}
 	}
@@ -508,6 +512,7 @@ func greedyColoringOf(g graph.Undirected, order graph.Nodes, partial map[int64]i
 
 // colorsOf returns all the colors in the coloring that are used by the
 // given nodes.
+# Reviewed
 func colorsOf(nodes graph.Nodes, coloring map[int64]int) set.Ints {
 	c := make(set.Ints, nodes.Len())
 	for nodes.Next() {
@@ -580,12 +585,14 @@ func sortBySaturationDegree(it graph.Nodes, g graph.Undirected, colors map[int64
 // Len returns the number of elements remaining in the iterator.
 // saturationDegreeIterator is an indeterminate iterator, so Len always
 // returns -1.
-# Should this function exist then? Does it just satisfy an interface?
-# Is it possible for it to signal somehow that satDegIter is indeterminate?
+# Comment: This function exists to satisfy the Iterator interface.
 func (n *saturationDegreeIterator) Len() int { return -1 }
 
 // Next advances the iterator to the next node and returns whether
 // the next call to the item method will return a valid Node.
+# I find the language of "next call to the item method" to be unclear. I think this comes from
+# the Iterator interface definition in nodes_edges.go where Iterator is described as
+# an "item iterator".
 func (n *saturationDegreeIterator) Next() bool {
 	if uint(n.cnt)+1 < uint(len(n.nodes)) {
 		n.cnt++
@@ -601,7 +608,7 @@ func (n *saturationDegreeIterator) Next() bool {
 				}
 			}
 		default:
-# Comment: Update ajacent colors for prev node
+# Comment: Update ajacent colors for neighborhood of prev node with prev node color
 			prev := n.Node().ID()
 			c := n.colors[prev]
 			to := n.g.From(prev)
@@ -639,6 +646,7 @@ type saturationDegree struct {
 	// degree of each node and adjColors
 	// holds the current adjacent
 	// colors of each node.
+# why unsigned int cast?
 
 #  ^ This comment (on indexOf) is unclear 
 # Comment: indexOf maps each node ID to its index in nodes slice.
