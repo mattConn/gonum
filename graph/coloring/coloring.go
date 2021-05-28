@@ -5,6 +5,11 @@
 // See Lewis, A Guide to Graph Colouring; Algorithms and Applications
 // doi:10.1007/978-3-319-25730-3 for significant discussion of approaches.
 
+// # KEY
+// Comment - suggested comment
+// Brélaz - relate to Brélaz text
+// Optimize - possible optimization
+
 package coloring
 
 import (
@@ -477,7 +482,6 @@ func greedyColoringOf(g graph.Undirected, order graph.Nodes, partial map[int64]i
 			k = c
 			// # Wont constrained always be true, save for the instance when all colored IDs have a color <= 0 ? (ks init value)
 			// # Is that instance an edge case? Worth noting
-			// # LEFT OFF HERE
 			constrained = true
 		}
 	}
@@ -495,6 +499,7 @@ func greedyColoringOf(g graph.Undirected, order graph.Nodes, partial map[int64]i
 			}
 			continue
 		}
+		// # Brélaz: 4. Color the chosen vertex with the least possible (lowest numbered) color.
 		// # Comment: uid is not colored, find unique color for it and update chromatic number if needed.
 		for c := 0; c <= k+1; c++ {
 			if !used.Has(c) {
@@ -609,6 +614,7 @@ func (n *saturationDegreeIterator) Next() bool {
 		case 0:
 
 			// # Comment: First call, find node with max degree
+			// OPTIMIZE: Sort by degree?
 			max := -1
 			for i, d := range n.degrees {
 				if d > max {
@@ -617,7 +623,7 @@ func (n *saturationDegreeIterator) Next() bool {
 				}
 			}
 		default:
-			// # Comment: Update ajacent colors for neighborhood of prev node with prev node color
+			// # Comment: Update adjacent colors for neighborhood of prev node with prev node color
 			prev := n.Node().ID()
 			c := n.colors[prev]
 			to := n.g.From(prev)
@@ -734,9 +740,8 @@ func (sd *saturationDegree) dsatur() int {
 		d := sd.degrees[i]
 		// # Wouldn't an if statement suffice here?
 		switch {
-		// # Comment: If uid has max saturation or
-		// # if uid has equal saturation and max degree,
-		// # choose uid.
+		// # Refer to Brélaz's text
+		// Brélaz: 3. Choose a vertex with a maximal saturation degree. If there is an equality, choose any vertex of maximal degree in the uncolored subgraph.
 		case s > maxSat, s == maxSat && d > maxDeg:
 			maxSat = s
 			maxDeg = d
