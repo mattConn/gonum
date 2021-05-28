@@ -724,13 +724,19 @@ func (sd *saturationDegree) reset(colors map[int64]int) {
 func (sd *saturationDegree) dsatur() int {
 	maxSat, maxDeg, chosen := -1, -1, -1
 	for i, u := range sd.nodes {
+		// # Optimize: Sort by saturation or degree?
 		uid := u.ID()
+		// # Comment: Skip node if colored
 		if _, ok := sd.colors[uid]; ok {
 			continue
 		}
 		s := saturationDegreeOf(uid, sd.g, sd.colors)
 		d := sd.degrees[i]
+		// # Wouldn't an if statement suffice here?
 		switch {
+		// # Comment: If uid has max saturation or
+		// # if uid has equal saturation and max degree,
+		// # choose uid.
 		case s > maxSat, s == maxSat && d > maxDeg:
 			maxSat = s
 			maxDeg = d
