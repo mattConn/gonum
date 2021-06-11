@@ -79,19 +79,28 @@ func DsaturExact(ctx context.Context, g graph.Undirected) (k int, colors map[int
 	// Brélaz Dsatur coloring, using the result if the recurrence is
 	// cancelled.
 
+	// # I could not find a way to read doi:10.1002/net.21716 online for free.
+
 	nodes := g.Nodes()
 	n := nodes.Len()
 	if n == 0 {
 		return
 	}
 
+	// # What does lb stand for?
+	// # Comment: Get max clique and order with Bron-Kerbosch algorithm
 	lb, maxClique := maximumClique(g)
+	// # Comment: If length of max clique == length of nodes,
+	// # return length and coloring where each node has unique color.
+	// # Comment explaining why?
 	if lb == n {
 		return lb, colorClique(maxClique), nil
 	}
 
 	order := sortBySaturationDegree(nodes, g, make(map[int64]int))
 	order.heuristic = order.dsatur
+	// # What does ub stand for?
+	// # Comment: find coloring via dsatur heuristic
 	ub, initial := greedyColoringOf(g, order, order.colors)
 	if lb == ub {
 		return ub, initial, nil
@@ -132,6 +141,7 @@ func newDsaturColoring(nodes []graph.Node, colors map[int64]int) dSaturColoring 
 }
 
 // color moves a node from the uncolored set to the colored set.
+// # Is there a more semantic name for this fn?
 func (c dSaturColoring) color(id int64) {
 	if !c.uncolored.Has(id) {
 		if _, ok := c.colors[id]; ok {
